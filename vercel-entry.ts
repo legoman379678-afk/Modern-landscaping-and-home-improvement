@@ -16,11 +16,14 @@ const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
 };
 
-const toWebRequest = (req: IncomingMessage): Request => {
+const toWebRequest = (
+  req: IncomingMessage,
+  path: string = req.url ?? "/",
+): Request => {
   const host = req.headers.host ?? "localhost";
   const proto =
     (req.headers["x-forwarded-proto"] as string | undefined) ?? "https";
-  const url = `${proto}://${host}${req.url ?? "/"}`;
+  const url = `${proto}://${host}${path}`;
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
     if (Array.isArray(value)) for (const v of value) headers.append(key, v);
@@ -37,12 +40,34 @@ const toWebRequest = (req: IncomingMessage): Request => {
   } as RequestInit);
 };
 
+// A path like "/assets/foo.js" that misses the static filesystem handler must
+// not be served the homepage: only fall back for extension-less document paths.
+const looksLikeStaticFile = (pathname: string): boolean => {
+  const last = pathname.split("?")[0].split("/").pop() ?? "";
+  return last.includes(".");
+};
+
 export default async function vercelHandler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   try {
-    const webRes = await fetchHandler.fetch(toWebRequest(req));
+    let webRes = await fetchHandler.fetch(toWebRequest(req));
+
+    // SPA-style fallback: TanStack Start returns 404 + an HTML document for
+    // paths with no matching route (this one-page site only defines "/"). The
+    // Build Output catch-all intentionally routes every path to this function,
+    // so serve the homepage for unmatched, extension-less GETs instead of a
+    // bare 404 — a visitor hitting a stray path still sees the site.
+    const isUnmatchedDoc =
+      webRes.status === 404 &&
+      (req.method ?? "GET") === "GET" &&
+      (webRes.headers.get("content-type") ?? "").includes("text/html") &&
+      !looksLikeStaticFile(req.url ?? "/");
+    if (isUnmatchedDoc) {
+      webRes = await fetchHandler.fetch(toWebRequest(req, "/"));
+    }
+
     res.statusCode = webRes.status;
     webRes.headers.forEach((value, key) => res.setHeader(key, value));
     if (webRes.body) {
