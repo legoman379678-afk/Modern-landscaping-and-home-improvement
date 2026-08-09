@@ -44,7 +44,7 @@ export default function Footer() {
 
         <div className="mt-12 border-t border-white/10 pt-6 text-center">
           <p className="text-xs text-white/50">
-            © Modern Landscape and Home Improvement. All Rights Reserved.
+            © 2026 Modern Landscape and Home Improvement. All Rights Reserved.
           </p>
         </div>
       </div>
